@@ -446,6 +446,11 @@ function saveCfg() {
 function toggleSettings() { document.getElementById('settings-panel').classList.toggle('open'); }
 function closeSettings()  { document.getElementById('settings-panel').classList.remove('open'); }
 
+function wiOpen(url) {
+  try { window.top.location.href = url; }
+  catch(_) { if (!window.open(url, '_blank')) window.location.href = url; }
+}
+
 // ═══════════════════════════════════════════════════════════
 //  DATA FETCHING
 // ═══════════════════════════════════════════════════════════
@@ -754,7 +759,7 @@ function appAccordion(p, adoBase) {
         const sLow   = state.toLowerCase();
         const nm2    = person(t.fields?.['System.AssignedTo']);
         return `<div class="task-row">
-          <a href="${adoBase}/${t.id}" target="_top" class="task-title">${t.fields?.['System.Title']||''}</a>
+          <a href="${adoBase}/${t.id}" onclick="wiOpen(this.href);return false;" class="task-title">${t.fields?.['System.Title']||''}</a>
           <div class="task-right">
             ${stateBadge(state)}
             ${nm2&&nm2!=='—'?`<span class="task-assignee">${nm2}</span>`:''}
@@ -770,7 +775,7 @@ function appAccordion(p, adoBase) {
         const sc     = sev.startsWith('1')?'var(--red-light)':sev.startsWith('2')?'var(--orange-light)':sev.startsWith('3')?'var(--yellow-light)':'var(--text-muted)';
         const sevTxt = sev.startsWith('1')?'Critical':sev.startsWith('2')?'High':sev.startsWith('3')?'Medium':sev.startsWith('4')?'Low':'—';
         const done   = isDone(b);
-        return `<a class="bug-row" href="${adoBase}/${b.id}" target="_top" onclick="event.stopPropagation()">
+        return `<a class="bug-row" href="${adoBase}/${b.id}" onclick="wiOpen(this.href);event.stopPropagation();return false;">
           <span class="bug-id">#${b.id}</span>
           <span class="bug-title"${done?' style="opacity:.45;text-decoration:line-through"':''}>${b.fields?.['System.Title']||''}</span>
           <div class="bug-right">
@@ -788,7 +793,7 @@ function appAccordion(p, adoBase) {
       <div class="ah-meta">
         <span>${it}</span>
         ${nm&&nm!=='—'?`<span>${nm}</span>`:''}
-        <span><a href="${adoBase}/${id}" target="_top" onclick="event.stopPropagation()" style="color:var(--text-dim);font-size:10px">↗ #${id}</a></span>
+        <span><a href="${adoBase}/${id}" onclick="wiOpen(this.href);event.stopPropagation();return false;" style="color:var(--text-dim);font-size:10px">↗ #${id}</a></span>
       </div>
     </div>
     <div class="ah-right">
@@ -854,8 +859,8 @@ function renderDefects() {
     const pri    = b.fields?.['Microsoft.VSTS.Common.Priority'];
 
     return `<tr>
-      <td style="font-size:12px"><a href="${adoBase}/${b.id}" target="_top" style="color:var(--text-dim)">#${b.id}</a></td>
-      <td><a href="${adoBase}/${b.id}" target="_top">${b.fields?.['System.Title']||''}</a></td>
+      <td style="font-size:12px"><a href="${adoBase}/${b.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${b.id}</a></td>
+      <td><a href="${adoBase}/${b.id}" onclick="wiOpen(this.href);return false;">${b.fields?.['System.Title']||''}</a></td>
       <td>${stateBadge(b.fields?.['System.State'])}</td>
       <td>${sevBadge(b.fields?.['Microsoft.VSTS.Common.Severity'])}</td>
       <td style="text-align:center">${pri?`<span class="badge bg-gray">P${pri}</span>`:'—'}</td>
