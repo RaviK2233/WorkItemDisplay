@@ -328,6 +328,16 @@
           <option value="bugs">Has open defects</option>
           <option value="clean">No defects</option>
         </select>
+        <span class="filter-label">Sort</span>
+        <select class="fi" id="pbi-sort" onchange="renderPBIs()">
+          <option value="health">Priority (default)</option>
+          <option value="name-asc">Name A → Z</option>
+          <option value="name-desc">Name Z → A</option>
+          <option value="defects-desc">Most defects</option>
+          <option value="defects-asc">Fewest defects</option>
+          <option value="pct-desc">Completion % ↓</option>
+          <option value="pct-asc">Completion % ↑</option>
+        </select>
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
         <span style="font-size:13px;font-weight:700;color:var(--text)">Applications</span>
@@ -718,7 +728,16 @@ function renderPBIs() {
     return (!fState||state===fState) && (!fIter||it===fIter) &&
            (!search||title.includes(search)||String(p.id).includes(search)) &&
            (fBugs===''||(fBugs==='bugs'&&p._openBugs>0)||(fBugs==='clean'&&p._openBugs===0));
-  }).sort((a,b) => {
+  });
+
+  const sortBy = document.getElementById('pbi-sort')?.value || 'health';
+  items.sort((a,b) => {
+    if (sortBy === 'name-asc')     return (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
+    if (sortBy === 'name-desc')    return (b.fields?.['System.Title']||'').localeCompare(a.fields?.['System.Title']||'');
+    if (sortBy === 'defects-desc') return (b._openBugs||0)-(a._openBugs||0) || b.id-a.id;
+    if (sortBy === 'defects-asc')  return (a._openBugs||0)-(b._openBugs||0) || b.id-a.id;
+    if (sortBy === 'pct-desc')     return b._pct-a._pct || b.id-a.id;
+    if (sortBy === 'pct-asc')      return a._pct-b._pct || b.id-a.id;
     const rank = x => x._critBugs>0?3:x._openBugs>0?2:isActive(x)?1:0;
     return rank(b)-rank(a)||b.id-a.id;
   });
