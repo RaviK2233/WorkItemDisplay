@@ -697,7 +697,10 @@ function buildModel() {
     p._emailSentDate   = emailDone
       ? (p._emailTask.fields?.['Microsoft.VSTS.Common.ClosedDate'] || p._emailTask.fields?.['System.ChangedDate'])
       : null;
-    p._testStartedDate = p._testStartedTask ? p._testStartedTask.fields?.['System.CreatedDate'] : null;
+    const testStartedDone = p._testStartedTask && isDone(p._testStartedTask);
+    p._testStartedDate = testStartedDone
+      ? (p._testStartedTask.fields?.['Microsoft.VSTS.Common.ClosedDate'] || p._testStartedTask.fields?.['System.ChangedDate'])
+      : null;
     p._leadDays = (p._emailSentDate && p._testStartedDate)
       ? Math.round((new Date(p._testStartedDate) - new Date(p._emailSentDate)) / 86400000)
       : null;
