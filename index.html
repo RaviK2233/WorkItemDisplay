@@ -419,9 +419,11 @@
         <span class="filter-label">Show</span>
         <select class="fi" id="lt-filter" onchange="renderLeadTime()">
           <option value="">All applications</option>
-          <option value="complete">Lead time complete</option>
-          <option value="ready">Email sent — awaiting test</option>
-          <option value="pending">Awaiting email</option>
+          <option value="no-email">No Email Task</option>
+          <option value="email-pending">Email Pending</option>
+          <option value="awaiting-test">Awaiting Test</option>
+          <option value="testing-in-progress">Testing In Progress</option>
+          <option value="test-completed">Test Completed</option>
         </select>
         <span class="filter-label">Sort</span>
         <select class="fi" id="lt-sort" onchange="renderLeadTime()">
@@ -699,6 +701,15 @@ function buildModel() {
     p._leadDays = (p._emailSentDate && p._testStartedDate)
       ? Math.round((new Date(p._testStartedDate) - new Date(p._emailSentDate)) / 86400000)
       : null;
+    p._smeTestingTask = p._tasks.find(t => {
+      const tt = (t.fields?.['System.Title']||'').toLowerCase();
+      return tt.includes('sme testing') || tt.includes('sme test');
+    });
+    if (p._smeTestingTask && isDone(p._smeTestingTask))        p._uatStatus = 'test-completed';
+    else if (p._testStartedTask && isDone(p._testStartedTask)) p._uatStatus = 'testing-in-progress';
+    else if (p._emailSentDate)                                 p._uatStatus = 'awaiting-test';
+    else if (p._emailTask)                                     p._uatStatus = 'email-pending';
+    else                                                       p._uatStatus = 'no-email';
   });
 }
 
@@ -1020,9 +1031,7 @@ function renderLeadTime() {
   const items = MODEL.pbis.filter(p => {
     const title = (p.fields?.['System.Title']||'').toLowerCase();
     if (search && !title.includes(search)) return false;
-    if (fShow === 'ready')    return p._emailSentDate && !p._testStartedDate;
-    if (fShow === 'complete') return p._leadDays !== null;
-    if (fShow === 'pending')  return !p._emailSentDate;
+    if (fShow) return p._uatStatus === fShow;
     return true;
   }).sort((a,b) => {
     const dw = p => (p._emailSentDate && !p._testStartedTask)
@@ -1045,19 +1054,20 @@ function renderLeadTime() {
     return rank(b)-rank(a) || dw(b)-dw(a);
   });
 
-  const completed = MODEL.pbis.filter(p => p._leadDays !== null);
-  const avgLead   = completed.length
-    ? Math.round(completed.reduce((s,p)=>s+p._leadDays,0)/completed.length) : null;
-  const waiting   = MODEL.pbis.filter(p => p._emailSentDate && !p._testStartedDate).length;
-  const noPending = MODEL.pbis.filter(p => !p._emailSentDate).length;
+  const withLeadDays   = MODEL.pbis.filter(p => p._leadDays !== null);
+  const avgLead        = withLeadDays.length
+    ? Math.round(withLeadDays.reduce((s,p)=>s+p._leadDays,0)/withLeadDays.length) : null;
+  const cntAwaiting    = MODEL.pbis.filter(p => p._uatStatus === 'awaiting-test').length;
+  const cntInProgress  = MODEL.pbis.filter(p => p._uatStatus === 'testing-in-progress').length;
+  const cntCompleted   = MODEL.pbis.filter(p => p._uatStatus === 'test-completed').length;
 
   const summary = document.getElementById('lt-summary');
   if (summary) {
     summary.innerHTML = [
-      { label:'Avg Lead Days',              val: avgLead!==null?avgLead+'d':'—', accent:'var(--blue-light)',   sub:`across ${completed.length} completed` },
-      { label:'Email Sent — Awaiting Test', val: waiting,                        accent:'var(--yellow-light)', sub:'test start task not created yet' },
-      { label:'Awaiting Email',             val: noPending,                      accent:'var(--text-muted)',   sub:'email task not yet done' },
-      { label:'Lead Time Complete',         val: completed.length,               accent:'var(--green-light)',  sub:'both milestones recorded' },
+      { label:'Avg Lead Days',        val: avgLead!==null?avgLead+'d':'—', accent:'var(--blue-light)',   sub:`across ${withLeadDays.length} with full data` },
+      { label:'Awaiting Test',        val: cntAwaiting,                    accent:'var(--yellow-light)', sub:'email sent, test not yet started' },
+      { label:'Testing In Progress',  val: cntInProgress,                  accent:'var(--purple-light)', sub:'testing started task done' },
+      { label:'Test Completed',       val: cntCompleted,                   accent:'var(--green-light)',  sub:'SME testing marked done' },
     ].map(c=>`<div class="kpi-card" style="--kpi-accent:${c.accent}">
       <div class="kpi-label">${c.label}</div>
       <div class="kpi-value" style="color:${c.accent}">${c.val}</div>
@@ -1088,13 +1098,19 @@ function renderLeadTime() {
                 : ld <= 14 ? 'color:var(--yellow-light)'
                 :             'color:var(--red-light)';
     let status = '';
-    const dw = (p._emailSentDate && !p._testStartedTask)
-      ? Math.floor((Date.now() - new Date(p._emailSentDate)) / 86400000) : null;
-    const dwCss = dw===null?'':dw>14?'color:var(--red-light)':dw>7?'color:var(--yellow-light)':'color:var(--text-muted)';
-    if (!p._emailTask)            status = `<span class="badge bg-gray">No email task</span>`;
-    else if (!p._emailSentDate)   status = `<span class="badge bg-blue">Email pending</span>`;
-    else if (!p._testStartedTask) status = `<span class="badge bg-yellow">Awaiting test</span><span style="font-size:10px;font-weight:700;margin-left:6px;${dwCss}">${dw}d waiting</span>`;
-    else                          status = `<span class="badge bg-green">Complete</span>`;
+    if (p._uatStatus === 'no-email') {
+      status = `<span class="badge bg-gray">No email task</span>`;
+    } else if (p._uatStatus === 'email-pending') {
+      status = `<span class="badge bg-blue">Email pending</span>`;
+    } else if (p._uatStatus === 'awaiting-test') {
+      const dw    = p._emailSentDate ? Math.floor((Date.now()-new Date(p._emailSentDate))/86400000) : null;
+      const dwCss = dw===null?'':dw>14?'color:var(--red-light)':dw>7?'color:var(--yellow-light)':'color:var(--text-muted)';
+      status = `<span class="badge bg-yellow">Awaiting test</span>` + (dw!==null?`<span style="font-size:10px;font-weight:700;margin-left:6px;${dwCss}">${dw}d waiting</span>`:'');
+    } else if (p._uatStatus === 'testing-in-progress') {
+      status = `<span class="badge bg-purple">Testing In Progress</span>`;
+    } else if (p._uatStatus === 'test-completed') {
+      status = `<span class="badge bg-green">Test Completed</span>`;
+    }
 
     return `<tr>
       <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
