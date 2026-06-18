@@ -69,15 +69,15 @@
     @keyframes spin{to{transform:rotate(360deg)}}
 
     /* ── KPI cards ── */
-    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:28px}
+    .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:22px}
     .kpi-card{
-      background:var(--surface);border:1px solid var(--border);border-radius:10px;
-      padding:20px 22px;position:relative;overflow:hidden;
+      background:var(--surface);border:1px solid var(--border);border-radius:8px;
+      padding:11px 13px;position:relative;overflow:hidden;
     }
-    .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--kpi-accent,var(--blue))}
-    .kpi-label{font-size:11px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
-    .kpi-value{font-size:36px;font-weight:700;line-height:1;margin-bottom:6px}
-    .kpi-sub{font-size:12px;color:var(--text-muted)}
+    .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--kpi-accent,var(--blue))}
+    .kpi-label{font-size:10px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+    .kpi-value{font-size:22px;font-weight:700;line-height:1;margin-bottom:4px}
+    .kpi-sub{font-size:11px;color:var(--text-muted)}
 
     /* ── Tabs ── */
     .tabs-bar{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:26px}
@@ -203,10 +203,10 @@
     @media(max-width:900px){
       .settings-grid{grid-template-columns:1fr 1fr}
       main{padding:16px}
-      .kpi-grid{grid-template-columns:repeat(2,1fr)}
+      .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
     }
     @media(max-width:500px){
-      .kpi-grid{grid-template-columns:1fr}
+      .kpi-grid{grid-template-columns:repeat(2,1fr)}
       .charts-grid{grid-template-columns:1fr}
     }
   </style>
@@ -300,6 +300,10 @@
 
     <!-- ── OVERVIEW TAB ── -->
     <div class="tab-pane active" id="tab-overview">
+      <div style="margin-bottom:18px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px">UAT Pipeline</div>
+        <div class="kpi-grid" id="overview-pipeline"></div>
+      </div>
       <div class="charts-grid">
         <div class="chart-card">
           <div class="chart-card-title">Application Status Distribution</div>
@@ -414,6 +418,15 @@
           <option value="complete">Lead time complete</option>
           <option value="ready">Email sent — awaiting test</option>
           <option value="pending">Awaiting email</option>
+        </select>
+        <span class="filter-label">Sort</span>
+        <select class="fi" id="lt-sort" onchange="renderLeadTime()">
+          <option value="default">Default</option>
+          <option value="wait-desc">Days waiting ↓ (longest first)</option>
+          <option value="wait-asc">Days waiting ↑ (shortest first)</option>
+          <option value="lead-desc">Lead days ↓</option>
+          <option value="lead-asc">Lead days ↑</option>
+          <option value="name-asc">Name A → Z</option>
         </select>
       </div>
       <div class="table-card">
@@ -981,8 +994,16 @@ function renderLeadTime() {
     if (fShow === 'pending')  return !p._emailSentDate;
     return true;
   }).sort((a,b) => {
+    const dw = p => (p._emailSentDate && !p._testStartedTask)
+      ? Math.floor((Date.now() - new Date(p._emailSentDate)) / 86400000) : -1;
+    const sortLT = document.getElementById('lt-sort')?.value || 'default';
+    if (sortLT === 'wait-desc') return dw(b) - dw(a) || (b.fields?.['System.Title']||'').localeCompare(a.fields?.['System.Title']||'');
+    if (sortLT === 'wait-asc')  return dw(a) - dw(b) || (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
+    if (sortLT === 'lead-desc') return (b._leadDays||0) - (a._leadDays||0);
+    if (sortLT === 'lead-asc')  return (a._leadDays||0) - (b._leadDays||0);
+    if (sortLT === 'name-asc')  return (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
     const rank = x => x._leadDays!==null ? 2 : x._emailSentDate ? 1 : 0;
-    return rank(b)-rank(a) || (b._leadDays||0)-(a._leadDays||0);
+    return rank(b)-rank(a) || dw(b)-dw(a);
   });
 
   const completed = MODEL.pbis.filter(p => p._leadDays !== null);
@@ -1028,9 +1049,12 @@ function renderLeadTime() {
                 : ld <= 14 ? 'color:var(--yellow-light)'
                 :             'color:var(--red-light)';
     let status = '';
+    const dw = (p._emailSentDate && !p._testStartedTask)
+      ? Math.floor((Date.now() - new Date(p._emailSentDate)) / 86400000) : null;
+    const dwCss = dw===null?'':dw>14?'color:var(--red-light)':dw>7?'color:var(--yellow-light)':'color:var(--text-muted)';
     if (!p._emailTask)            status = `<span class="badge bg-gray">No email task</span>`;
     else if (!p._emailSentDate)   status = `<span class="badge bg-blue">Email pending</span>`;
-    else if (!p._testStartedTask) status = `<span class="badge bg-yellow">Awaiting test task</span>`;
+    else if (!p._testStartedTask) status = `<span class="badge bg-yellow">Awaiting test</span><span style="font-size:10px;font-weight:700;margin-left:6px;${dwCss}">${dw}d waiting</span>`;
     else                          status = `<span class="badge bg-green">Complete</span>`;
 
     return `<tr>
@@ -1060,6 +1084,25 @@ function destroyCharts() {
 
 function renderCharts() {
   destroyCharts();
+
+  // ── UAT pipeline stats ──
+  const pipeEl = document.getElementById('overview-pipeline');
+  if (pipeEl) {
+    const noTask    = MODEL.pbis.filter(p => !p._emailTask).length;
+    const emailPend = MODEL.pbis.filter(p => p._emailTask && !p._emailSentDate).length;
+    const emailSent = MODEL.pbis.filter(p => p._emailSentDate && !p._testStartedTask).length;
+    const testStart = MODEL.pbis.filter(p => p._testStartedTask).length;
+    pipeEl.innerHTML = [
+      { label:'No Email Task',   val: noTask,    accent:'var(--text-dim)',      sub:'email task not yet created' },
+      { label:'Email Pending',   val: emailPend, accent:'var(--text-muted)',    sub:'email task not done yet' },
+      { label:'Email Sent',      val: emailSent, accent:'var(--yellow-light)',  sub:'awaiting test start task' },
+      { label:'Test Started',    val: testStart, accent:'var(--green-light)',   sub:'test started task created' },
+    ].map(c=>`<div class="kpi-card" style="--kpi-accent:${c.accent}">
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" style="color:${c.accent}">${c.val}</div>
+      <div class="kpi-sub">${c.sub}</div>
+    </div>`).join('');
+  }
 
   // ── 1. PBI status donut ──
   const statusMap = {};
