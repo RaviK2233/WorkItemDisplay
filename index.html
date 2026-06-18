@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ADO PBI Dashboard</title>
+  <title>ADO Application Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -257,7 +257,7 @@
 <header class="app-header">
   <div class="app-logo">📊</div>
   <div>
-    <div class="app-title" id="hdr-title">ADO PBI Dashboard</div>
+    <div class="app-title" id="hdr-title">ADO Application Dashboard</div>
     <div class="app-sub" id="hdr-sub">Not connected — click Settings to begin</div>
   </div>
   <div class="hdr-right">
@@ -295,13 +295,14 @@
       <button class="tab-btn active" onclick="switchTab('overview',this)">🏠 Overview</button>
       <button class="tab-btn" onclick="switchTab('pbis',this)">📋 Application Test Progress</button>
       <button class="tab-btn" onclick="switchTab('defects',this)">🐛 Defects</button>
+      <button class="tab-btn" onclick="switchTab('leadtime',this)">⏱ Lead Time</button>
     </div>
 
     <!-- ── OVERVIEW TAB ── -->
     <div class="tab-pane active" id="tab-overview">
       <div class="charts-grid">
         <div class="chart-card">
-          <div class="chart-card-title">PBI Status Distribution</div>
+          <div class="chart-card-title">Application Status Distribution</div>
           <div class="chart-box"><canvas id="chart-pbi-status"></canvas></div>
         </div>
         <div class="chart-card">
@@ -309,7 +310,7 @@
           <div class="chart-box"><canvas id="chart-defect-sev"></canvas></div>
         </div>
         <div class="chart-card">
-          <div class="chart-card-title">Task Completion per PBI (Top 12)</div>
+          <div class="chart-card-title">Task Completion per Application (Top 12)</div>
           <div class="chart-box"><canvas id="chart-task-pbi"></canvas></div>
         </div>
       </div>
@@ -366,6 +367,8 @@
           <option value="open">Open only</option>
           <option value="">All</option>
         </select>
+        <span class="filter-label">Tag</span>
+        <select class="fi" id="def-tags" onchange="renderDefects()"><option value="">All Tags</option></select>
       </div>
       <div class="table-card">
         <div class="table-card-header">
@@ -375,17 +378,19 @@
         <table class="data-table" style="table-layout:fixed">
           <colgroup>
             <col style="width:80px">
-            <col>
+            <col style="width:180px">
+            <col style="width:160px">
             <col style="width:110px">
             <col style="width:120px">
             <col style="width:80px">
-            <col style="width:160px">
+            <col style="width:140px">
             <col style="width:60px">
           </colgroup>
           <thead>
             <tr>
               <th style="text-align:left">ID</th>
               <th style="text-align:left">Title</th>
+              <th style="text-align:left">Application</th>
               <th style="text-align:left">State</th>
               <th style="text-align:left">Severity</th>
               <th style="text-align:center">Priority</th>
@@ -396,6 +401,54 @@
           <tbody id="def-tbody"></tbody>
         </table>
       </div>
+    </div>
+
+    <!-- ── LEAD TIME TAB ── -->
+    <div class="tab-pane" id="tab-leadtime">
+      <div class="kpi-grid" id="lt-summary" style="margin-bottom:20px"></div>
+      <div class="filters-bar">
+        <input class="fi fi-search" type="text" id="lt-search" placeholder="🔍 Search applications…" oninput="renderLeadTime()" />
+        <span class="filter-label">Show</span>
+        <select class="fi" id="lt-filter" onchange="renderLeadTime()">
+          <option value="">All applications</option>
+          <option value="complete">Lead time complete</option>
+          <option value="ready">Email sent — awaiting test</option>
+          <option value="pending">Awaiting email</option>
+        </select>
+      </div>
+      <div class="table-card">
+        <div class="table-card-header">
+          <span class="table-card-title">Lead Time — Email Sent → Test Started</span>
+          <span class="count-pill" id="lt-count">0</span>
+        </div>
+        <table class="data-table" style="table-layout:fixed">
+          <colgroup>
+            <col>
+            <col style="width:140px">
+            <col style="width:140px">
+            <col style="width:90px">
+            <col style="width:160px">
+            <col style="width:120px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th style="text-align:left">Application</th>
+              <th style="text-align:left">Email Sent Date</th>
+              <th style="text-align:left">Test Started Date</th>
+              <th style="text-align:center">Lead Days</th>
+              <th style="text-align:left">Status</th>
+              <th style="text-align:left">Iteration</th>
+            </tr>
+          </thead>
+          <tbody id="lt-tbody"></tbody>
+        </table>
+      </div>
+      <p style="font-size:11px;color:var(--text-dim);margin-top:12px">
+        Lead days = days between <strong>Email sent to users</strong> task (Done) and <strong>Test started</strong> task (created).
+        Colour: <span style="color:var(--green-light)">■</span> 0–7d &nbsp;
+        <span style="color:var(--yellow-light)">■</span> 8–14d &nbsp;
+        <span style="color:var(--red-light)">■</span> 15+d
+      </p>
     </div>
 
   </div><!-- /dashboard -->
@@ -600,7 +653,7 @@ function buildModel() {
 
   MODEL.bugs.forEach(b => {
     const pid = b.fields?.['System.Parent'];
-    if (pid && pbiById[pid]) pbiById[pid]._bugs.push(b);
+    if (pid && pbiById[pid]) { pbiById[pid]._bugs.push(b); b._parentPbi = pbiById[pid]; }
   });
 
   MODEL.pbis.forEach(p => {
@@ -614,6 +667,17 @@ function buildModel() {
     p._openBugs  = ob.length;
     p._critBugs  = ob.filter(b=>{ const s=String(b.fields?.['Microsoft.VSTS.Common.Severity']||''); return s.startsWith('1')||s.startsWith('2'); }).length;
     p._health    = p._critBugs>0?'h-crit':p._openBugs>0?'h-warn':isDone(p)?'h-done':'h-active';
+    // Lead time milestones
+    p._emailTask       = p._tasks.find(t => (t.fields?.['System.Title']||'').toLowerCase().includes('email sent'));
+    p._testStartedTask = p._tasks.find(t => (t.fields?.['System.Title']||'').toLowerCase().includes('test started'));
+    const emailDone    = p._emailTask && isDone(p._emailTask);
+    p._emailSentDate   = emailDone
+      ? (p._emailTask.fields?.['Microsoft.VSTS.Common.ClosedDate'] || p._emailTask.fields?.['System.ChangedDate'])
+      : null;
+    p._testStartedDate = p._testStartedTask ? p._testStartedTask.fields?.['System.CreatedDate'] : null;
+    p._leadDays = (p._emailSentDate && p._testStartedDate)
+      ? Math.round((new Date(p._testStartedDate) - new Date(p._emailSentDate)) / 86400000)
+      : null;
   });
 }
 
@@ -644,6 +708,7 @@ function renderDashboard() {
   populateFilters();
   renderPBIs();
   renderDefects();
+  renderLeadTime();
   renderCharts();
 }
 
@@ -664,12 +729,13 @@ function renderKPIs() {
   const notStarted = MODEL.pbis.filter(p=>!isActive(p)&&!isDone(p)).length;
 
   document.getElementById('kpi-grid').innerHTML = [
-    { label:'PBIs In Progress', val:inProg,     sub:`${notStarted} not started, ${total} total`,        accent:'var(--blue-light)' },
-    { label:'PBIs Completed',   val:done,        sub:`${pct}% of all PBIs done`,                         accent:'var(--green-light)' },
-    { label:'Tasks Completed',  val:tDone,       sub:`of ${tTotal} tasks across all PBIs`,               accent:'var(--purple-light)' },
-    { label:'Open Defects',     val:openBugs,    sub:`${MODEL.bugs.length} defects total`,               accent: openBugs>0?'var(--yellow-light)':'var(--green-light)' },
-    { label:'Critical / High',  val:critBugs,    sub:'severity 1–2 defects still open',                 accent: critBugs>0?'var(--red-light)':'var(--green-light)' },
-    { label:'Overall Progress', val:pct+'%',     sub:`${done} of ${total} PBIs complete`,               accent: pct>=80?'var(--green-light)':pct>=50?'var(--yellow-light)':'var(--blue-light)' },
+    { label:'Total Applications',       val:total,    sub:`${inProg} in progress, ${done} completed`,          accent:'var(--text-muted)' },
+    { label:'Applications In Progress', val:inProg,   sub:`${notStarted} not started, ${total} total`,         accent:'var(--blue-light)' },
+    { label:'Applications Completed',   val:done,     sub:`${pct}% of all applications done`,                  accent:'var(--green-light)' },
+    { label:'Tasks Completed',          val:tDone,    sub:`of ${tTotal} tasks across all applications`,        accent:'var(--purple-light)' },
+    { label:'Open Defects',             val:openBugs, sub:`${MODEL.bugs.length} defects total`,                accent: openBugs>0?'var(--yellow-light)':'var(--green-light)' },
+    { label:'Critical / High',          val:critBugs, sub:'severity 1–2 defects still open',                  accent: critBugs>0?'var(--red-light)':'var(--green-light)' },
+    { label:'Overall Progress',         val:pct+'%',  sub:`${done} of ${total} applications complete`,         accent: pct>=80?'var(--green-light)':pct>=50?'var(--yellow-light)':'var(--blue-light)' },
   ].map(c=>`
     <div class="kpi-card" style="--kpi-accent:${c.accent}">
       <div class="kpi-label">${c.label}</div>
@@ -711,6 +777,11 @@ function populateFilters() {
   fill('pbi-state', [...new Set(MODEL.pbis.map(p=>p.fields?.['System.State']).filter(Boolean))]);
   fill('pbi-iter',  [...new Set(MODEL.pbis.map(iter).filter(v=>v&&v!=='—'))]);
   fill('def-state', [...new Set(MODEL.bugs.map(b=>b.fields?.['System.State']).filter(Boolean))]);
+  fill('def-tags',  [...new Set(
+    MODEL.bugs.flatMap(b =>
+      (b.fields?.['System.Tags']||'').split(';').map(t=>t.trim()).filter(Boolean)
+    )
+  )]);
 }
 
 // ── Application Test Progress Accordion ──
@@ -846,6 +917,7 @@ function renderDefects() {
   const search   = (document.getElementById('def-search')?.value||'').toLowerCase();
   const fState   = document.getElementById('def-state')?.value||'';
   const fSev     = document.getElementById('def-sev')?.value||'';
+  const fTag     = document.getElementById('def-tags')?.value||'';
   const openOnly = document.getElementById('def-open')?.value==='open';
   const adoBase  = `https://dev.azure.com/${encodeURIComponent(cfg.org)}/${encodeURIComponent(cfg.project)}/_workitems/edit`;
 
@@ -853,10 +925,12 @@ function renderDefects() {
     const state = b.fields?.['System.State']||'';
     const sev   = (b.fields?.['Microsoft.VSTS.Common.Severity']||'').charAt(0);
     const title = (b.fields?.['System.Title']||'').toLowerCase();
+    const tags  = (b.fields?.['System.Tags']||'').split(';').map(t=>t.trim());
     return (!openOnly||!isDone(b))
       && (!fState||state===fState)
       && (!fSev||sev===fSev)
-      && (!search||title.includes(search)||String(b.id).includes(search));
+      && (!search||title.includes(search)||String(b.id).includes(search))
+      && (!fTag||tags.includes(fTag));
   }).sort((a,b)=>{
     const sa=parseInt(a.fields?.['Microsoft.VSTS.Common.Severity']||9);
     const sb=parseInt(b.fields?.['Microsoft.VSTS.Common.Severity']||9);
@@ -867,24 +941,111 @@ function renderDefects() {
   const tbody = document.getElementById('def-tbody');
 
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty">No defects match your filters. 🎉</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No defects match your filters. 🎉</div></td></tr>`;
     return;
   }
 
   tbody.innerHTML = items.map(b => {
-    const age    = ageDays(b.fields?.['System.CreatedDate']);
-    const ageStr = age!==null ? age+'d' : '—';
-    const ageCss = age>30?'color:var(--red-light)':age>14?'color:var(--yellow-light)':'';
-    const pri    = b.fields?.['Microsoft.VSTS.Common.Priority'];
+    const age     = ageDays(b.fields?.['System.CreatedDate']);
+    const ageStr  = age!==null ? age+'d' : '—';
+    const ageCss  = age>30?'color:var(--red-light)':age>14?'color:var(--yellow-light)':'';
+    const pri     = b.fields?.['Microsoft.VSTS.Common.Priority'];
+    const appName = b._parentPbi ? (b._parentPbi.fields?.['System.Title'] || '—') : '—';
 
     return `<tr>
       <td style="font-size:12px"><a href="${adoBase}/${b.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${b.id}</a></td>
       <td><a href="${adoBase}/${b.id}" onclick="wiOpen(this.href);return false;">${b.fields?.['System.Title']||''}</a></td>
+      <td style="font-size:12px;color:var(--text-muted)" title="${appName}">${appName}</td>
       <td>${stateBadge(b.fields?.['System.State'])}</td>
       <td>${sevBadge(b.fields?.['Microsoft.VSTS.Common.Severity'])}</td>
       <td style="text-align:center">${pri?`<span class="badge bg-gray">P${pri}</span>`:'—'}</td>
       <td>${person(b.fields?.['System.AssignedTo'])}</td>
       <td style="text-align:center;${ageCss}">${ageStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LEAD TIME
+// ═══════════════════════════════════════════════════════════
+function renderLeadTime() {
+  const search  = (document.getElementById('lt-search')?.value||'').toLowerCase();
+  const fShow   = document.getElementById('lt-filter')?.value||'';
+  const adoBase = `https://dev.azure.com/${encodeURIComponent(cfg.org)}/${encodeURIComponent(cfg.project)}/_workitems/edit`;
+
+  const items = MODEL.pbis.filter(p => {
+    const title = (p.fields?.['System.Title']||'').toLowerCase();
+    if (search && !title.includes(search)) return false;
+    if (fShow === 'ready')    return p._emailSentDate && !p._testStartedDate;
+    if (fShow === 'complete') return p._leadDays !== null;
+    if (fShow === 'pending')  return !p._emailSentDate;
+    return true;
+  }).sort((a,b) => {
+    const rank = x => x._leadDays!==null ? 2 : x._emailSentDate ? 1 : 0;
+    return rank(b)-rank(a) || (b._leadDays||0)-(a._leadDays||0);
+  });
+
+  const completed = MODEL.pbis.filter(p => p._leadDays !== null);
+  const avgLead   = completed.length
+    ? Math.round(completed.reduce((s,p)=>s+p._leadDays,0)/completed.length) : null;
+  const waiting   = MODEL.pbis.filter(p => p._emailSentDate && !p._testStartedDate).length;
+  const noPending = MODEL.pbis.filter(p => !p._emailSentDate).length;
+
+  const summary = document.getElementById('lt-summary');
+  if (summary) {
+    summary.innerHTML = [
+      { label:'Avg Lead Days',              val: avgLead!==null?avgLead+'d':'—', accent:'var(--blue-light)',   sub:`across ${completed.length} completed` },
+      { label:'Email Sent — Awaiting Test', val: waiting,                        accent:'var(--yellow-light)', sub:'test start task not created yet' },
+      { label:'Awaiting Email',             val: noPending,                      accent:'var(--text-muted)',   sub:'email task not yet done' },
+      { label:'Lead Time Complete',         val: completed.length,               accent:'var(--green-light)',  sub:'both milestones recorded' },
+    ].map(c=>`<div class="kpi-card" style="--kpi-accent:${c.accent}">
+      <div class="kpi-label">${c.label}</div>
+      <div class="kpi-value" style="color:${c.accent}">${c.val}</div>
+      <div class="kpi-sub">${c.sub}</div>
+    </div>`).join('');
+  }
+
+  document.getElementById('lt-count').textContent = items.length;
+  const tbody = document.getElementById('lt-tbody');
+  if (!tbody) return;
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">No applications match your filters.</div></td></tr>`;
+    return;
+  }
+
+  const fmtDate = d => d
+    ? new Date(d).toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'})
+    : '—';
+
+  tbody.innerHTML = items.map(p => {
+    const title = p.fields?.['System.Title'] || '(untitled)';
+    const ld    = p._leadDays;
+    const ldStr = ld !== null ? ld+'d' : '—';
+    const ldCss = ld===null ? 'color:var(--text-muted)'
+                : ld < 0   ? 'color:var(--blue-light)'
+                : ld <= 7  ? 'color:var(--green-light)'
+                : ld <= 14 ? 'color:var(--yellow-light)'
+                :             'color:var(--red-light)';
+    let status = '';
+    if (!p._emailTask)            status = `<span class="badge bg-gray">No email task</span>`;
+    else if (!p._emailSentDate)   status = `<span class="badge bg-blue">Email pending</span>`;
+    else if (!p._testStartedTask) status = `<span class="badge bg-yellow">Awaiting test task</span>`;
+    else                          status = `<span class="badge bg-green">Complete</span>`;
+
+    return `<tr>
+      <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
+      <td style="font-size:12px;white-space:nowrap">${
+        p._emailTask
+          ? (p._emailSentDate ? fmtDate(p._emailSentDate) : `<span style="color:var(--text-muted)">Not done yet</span>`)
+          : `<span style="color:var(--text-dim)">—</span>`
+      }</td>
+      <td style="font-size:12px;white-space:nowrap">${
+        p._testStartedTask ? fmtDate(p._testStartedDate) : `<span style="color:var(--text-dim)">—</span>`
+      }</td>
+      <td style="text-align:center;font-weight:700;${ldCss}">${ldStr}</td>
+      <td>${status}</td>
+      <td style="font-size:11px;color:var(--text-muted)">${iter(p)}</td>
     </tr>`;
   }).join('');
 }
@@ -991,7 +1152,8 @@ function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name)?.classList.add('active');
   btn?.classList.add('active');
-  if (name==='overview') renderCharts();
+  if (name==='overview')  renderCharts();
+  if (name==='leadtime')  renderLeadTime();
 }
 
 // ═══════════════════════════════════════════════════════════
