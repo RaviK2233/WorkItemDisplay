@@ -108,6 +108,8 @@
       letter-spacing:.5px;color:var(--text-muted);border-bottom:1px solid var(--border);
       white-space:nowrap;background:var(--surface);
     }
+    .data-table th.sortable{cursor:pointer;user-select:none;transition:color .15s}
+    .data-table th.sortable:hover{color:var(--text)}
     .data-table td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .data-table tbody tr:last-child td{border-bottom:none}
     .data-table tbody tr:hover td{background:rgba(255,255,255,.02)}
@@ -393,14 +395,14 @@
           </colgroup>
           <thead>
             <tr>
-              <th style="text-align:left">ID</th>
-              <th style="text-align:left">Title</th>
-              <th style="text-align:left">Application</th>
-              <th style="text-align:left">State</th>
-              <th style="text-align:left">Severity</th>
-              <th style="text-align:center">Priority</th>
-              <th style="text-align:left">Assigned To</th>
-              <th style="text-align:center">Age</th>
+              <th class="sortable" id="defth-id" style="text-align:left" onclick="sortDefects('id')">ID</th>
+              <th class="sortable" id="defth-title" style="text-align:left" onclick="sortDefects('title')">Title</th>
+              <th class="sortable" id="defth-app" style="text-align:left" onclick="sortDefects('app')">Application</th>
+              <th class="sortable" id="defth-state" style="text-align:left" onclick="sortDefects('state')">State</th>
+              <th class="sortable" id="defth-sev" style="text-align:left" onclick="sortDefects('sev')">Severity ↑</th>
+              <th class="sortable" id="defth-pri" style="text-align:center" onclick="sortDefects('pri')">Priority</th>
+              <th class="sortable" id="defth-assignee" style="text-align:left" onclick="sortDefects('assignee')">Assigned To</th>
+              <th class="sortable" id="defth-age" style="text-align:center" onclick="sortDefects('age')">Age</th>
             </tr>
           </thead>
           <tbody id="def-tbody"></tbody>
@@ -437,14 +439,13 @@
           <span class="count-pill" id="lt-count">0</span>
         </div>
         <div style="overflow-x:auto">
-        <table class="data-table" style="table-layout:fixed;min-width:700px">
+        <table class="data-table" style="table-layout:fixed;min-width:580px">
           <colgroup>
-            <col style="min-width:160px">
+            <col style="min-width:180px">
             <col style="width:140px">
             <col style="width:140px">
             <col style="width:90px">
-            <col style="width:160px">
-            <col style="width:120px">
+            <col style="width:190px">
           </colgroup>
           <thead>
             <tr>
@@ -453,7 +454,6 @@
               <th style="text-align:left">Test Started Date</th>
               <th style="text-align:center">Lead Days</th>
               <th style="text-align:left">Status</th>
-              <th style="text-align:left">Iteration</th>
             </tr>
           </thead>
           <tbody id="lt-tbody"></tbody>
@@ -481,6 +481,7 @@ let MODEL = { pbis:[], tasks:[], bugs:[] };
 let RAW = [];
 let _timer = null;
 let _charts = {};
+let _defSort = { col:'sev', dir:'asc' };
 
 const PBI_TYPES  = new Set(['Product Backlog Item','User Story','Feature','Requirement']);
 const TASK_TYPES = new Set(['Task']);
@@ -686,7 +687,10 @@ function buildModel() {
     p._health    = p._critBugs>0?'h-crit':p._openBugs>0?'h-warn':isDone(p)?'h-done':'h-active';
     // Lead time milestones
     p._emailTask       = p._tasks.find(t => (t.fields?.['System.Title']||'').toLowerCase().includes('email sent'));
-    p._testStartedTask = p._tasks.find(t => (t.fields?.['System.Title']||'').toLowerCase().includes('test started'));
+    p._testStartedTask = p._tasks.find(t => {
+      const tt = (t.fields?.['System.Title']||'').toLowerCase();
+      return tt.includes('testing started') || tt.includes('test started');
+    });
     const emailDone    = p._emailTask && isDone(p._emailTask);
     p._emailSentDate   = emailDone
       ? (p._emailTask.fields?.['Microsoft.VSTS.Common.ClosedDate'] || p._emailTask.fields?.['System.ChangedDate'])
@@ -938,6 +942,14 @@ function renderDefects() {
   const openOnly = document.getElementById('def-open')?.value==='open';
   const adoBase  = `https://dev.azure.com/${encodeURIComponent(cfg.org)}/${encodeURIComponent(cfg.project)}/_workitems/edit`;
 
+  // Update sort indicators on column headers
+  ['id','title','app','state','sev','pri','assignee','age'].forEach((c,i) => {
+    const el = document.getElementById('defth-'+c);
+    if (!el) return;
+    const lbl = ['ID','Title','Application','State','Severity','Priority','Assigned To','Age'][i];
+    el.textContent = lbl + (_defSort.col===c ? (_defSort.dir==='asc' ? ' ↑' : ' ↓') : '');
+  });
+
   const items = MODEL.bugs.filter(b => {
     const state = b.fields?.['System.State']||'';
     const sev   = (b.fields?.['Microsoft.VSTS.Common.Severity']||'').charAt(0);
@@ -948,10 +960,19 @@ function renderDefects() {
       && (!fSev||sev===fSev)
       && (!search||title.includes(search)||String(b.id).includes(search))
       && (!fTag||tags.includes(fTag));
-  }).sort((a,b)=>{
+  }).sort((a,b) => {
+    const dir = _defSort.dir === 'asc' ? 1 : -1;
+    const col = _defSort.col;
+    if (col==='id')       return dir * (a.id - b.id);
+    if (col==='title')    return dir * (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
+    if (col==='app')      return dir * (a._parentPbi?.fields?.['System.Title']||'').localeCompare(b._parentPbi?.fields?.['System.Title']||'');
+    if (col==='state')    return dir * (a.fields?.['System.State']||'').localeCompare(b.fields?.['System.State']||'');
+    if (col==='pri')      return dir * (parseInt(a.fields?.['Microsoft.VSTS.Common.Priority']||9) - parseInt(b.fields?.['Microsoft.VSTS.Common.Priority']||9));
+    if (col==='assignee') return dir * person(a.fields?.['System.AssignedTo']).localeCompare(person(b.fields?.['System.AssignedTo']));
+    if (col==='age')      return dir * ((ageDays(a.fields?.['System.CreatedDate'])||0) - (ageDays(b.fields?.['System.CreatedDate'])||0));
     const sa=parseInt(a.fields?.['Microsoft.VSTS.Common.Severity']||9);
     const sb=parseInt(b.fields?.['Microsoft.VSTS.Common.Severity']||9);
-    return sa-sb||b.id-a.id;
+    return dir * (sa - sb) || (a.id - b.id);
   });
 
   document.getElementById('def-count').textContent = items.length;
@@ -980,6 +1001,12 @@ function renderDefects() {
       <td style="text-align:center;${ageCss}">${ageStr}</td>
     </tr>`;
   }).join('');
+}
+
+function sortDefects(col) {
+  if (_defSort.col === col) _defSort.dir = _defSort.dir === 'asc' ? 'desc' : 'asc';
+  else { _defSort.col = col; _defSort.dir = 'asc'; }
+  renderDefects();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1043,7 +1070,7 @@ function renderLeadTime() {
   if (!tbody) return;
 
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty">No applications match your filters.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">No applications match your filters.</div></td></tr>`;
     return;
   }
 
@@ -1081,7 +1108,6 @@ function renderLeadTime() {
       }</td>
       <td style="text-align:center;font-weight:700;${ldCss}">${ldStr}</td>
       <td>${status}</td>
-      <td style="font-size:11px;color:var(--text-muted)">${iter(p)}</td>
     </tr>`;
   }).join('');
 }
