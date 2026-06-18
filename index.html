@@ -80,7 +80,7 @@
     .kpi-sub{font-size:11px;color:var(--text-muted)}
 
     /* ── Tabs ── */
-    .tabs-bar{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:26px}
+    .tabs-bar{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:26px;overflow-x:auto;-webkit-overflow-scrolling:touch}
     .tab-btn{
       padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;background:none;
       border:none;color:var(--text-muted);border-bottom:2px solid transparent;
@@ -379,7 +379,8 @@
           <span class="table-card-title">Defects / Bugs</span>
           <span class="count-pill" id="def-count">0</span>
         </div>
-        <table class="data-table" style="table-layout:fixed">
+        <div style="overflow-x:auto">
+        <table class="data-table" style="table-layout:fixed;min-width:700px">
           <colgroup>
             <col style="width:80px">
             <col style="width:180px">
@@ -404,6 +405,7 @@
           </thead>
           <tbody id="def-tbody"></tbody>
         </table>
+        </div>
       </div>
     </div>
 
@@ -434,9 +436,10 @@
           <span class="table-card-title">Lead Time — Email Sent → Test Started</span>
           <span class="count-pill" id="lt-count">0</span>
         </div>
-        <table class="data-table" style="table-layout:fixed">
+        <div style="overflow-x:auto">
+        <table class="data-table" style="table-layout:fixed;min-width:700px">
           <colgroup>
-            <col>
+            <col style="min-width:160px">
             <col style="width:140px">
             <col style="width:140px">
             <col style="width:90px">
@@ -455,6 +458,7 @@
           </thead>
           <tbody id="lt-tbody"></tbody>
         </table>
+        </div>
       </div>
       <p style="font-size:11px;color:var(--text-dim);margin-top:12px">
         Lead days = days between <strong>Email sent to users</strong> task (Done) and <strong>Test started</strong> task (created).
@@ -999,8 +1003,16 @@ function renderLeadTime() {
     const sortLT = document.getElementById('lt-sort')?.value || 'default';
     if (sortLT === 'wait-desc') return dw(b) - dw(a) || (b.fields?.['System.Title']||'').localeCompare(a.fields?.['System.Title']||'');
     if (sortLT === 'wait-asc')  return dw(a) - dw(b) || (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
-    if (sortLT === 'lead-desc') return (b._leadDays||0) - (a._leadDays||0);
-    if (sortLT === 'lead-asc')  return (a._leadDays||0) - (b._leadDays||0);
+    if (sortLT === 'lead-desc') {
+      if (a._leadDays===null && b._leadDays===null) return 0;
+      if (a._leadDays===null) return 1; if (b._leadDays===null) return -1;
+      return b._leadDays - a._leadDays;
+    }
+    if (sortLT === 'lead-asc') {
+      if (a._leadDays===null && b._leadDays===null) return 0;
+      if (a._leadDays===null) return 1; if (b._leadDays===null) return -1;
+      return a._leadDays - b._leadDays;
+    }
     if (sortLT === 'name-asc')  return (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
     const rank = x => x._leadDays!==null ? 2 : x._emailSentDate ? 1 : 0;
     return rank(b)-rank(a) || dw(b)-dw(a);
