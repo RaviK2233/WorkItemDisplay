@@ -249,6 +249,7 @@
       <option value="8" selected>8 hours</option>
       <option value="24">24 hours</option>
       <option value="168">7 days</option>
+      <option value="720">30 days</option>
     </select>
     <span style="font-size:11px;color:var(--text-dim)">(stored in this browser only)</span>
   </div>
@@ -302,6 +303,8 @@
       <button class="tab-btn" onclick="switchTab('pbis',this)">📋 Application Test Progress</button>
       <button class="tab-btn" onclick="switchTab('defects',this)">🐛 Defects</button>
       <button class="tab-btn" onclick="switchTab('leadtime',this)">⏱ Lead Time</button>
+      <button class="tab-btn" onclick="switchTab('outofscope',this)">🚫 Out of Scope</button>
+      <button class="tab-btn" onclick="switchTab('notesting',this)">⏭ In Scope, No Testing</button>
     </div>
 
     <!-- ── OVERVIEW TAB ── -->
@@ -474,6 +477,74 @@
       </p>
     </div>
 
+    <!-- ── OUT OF SCOPE TAB ── -->
+    <div class="tab-pane" id="tab-outofscope">
+      <div class="filters-bar">
+        <input class="fi fi-search" type="text" id="oos-search" placeholder="🔍 Search applications…" oninput="renderOutOfScope()" />
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">Applications Out of Scope</span>
+        <span class="count-pill" id="oos-count">0</span>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:4px">PBIs with state <em>Removed</em></span>
+      </div>
+      <div class="table-card">
+        <div style="overflow-x:auto">
+        <table class="data-table" style="table-layout:fixed;min-width:500px">
+          <colgroup>
+            <col style="width:80px">
+            <col>
+            <col style="width:160px">
+            <col style="width:160px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th style="text-align:left">ID</th>
+              <th style="text-align:left">Title</th>
+              <th style="text-align:left">Iteration</th>
+              <th style="text-align:left">Assigned To</th>
+            </tr>
+          </thead>
+          <tbody id="oos-tbody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── IN SCOPE NO TESTING TAB ── -->
+    <div class="tab-pane" id="tab-notesting">
+      <div class="filters-bar">
+        <input class="fi fi-search" type="text" id="nt-search" placeholder="🔍 Search applications…" oninput="renderNoTesting()" />
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <span style="font-size:13px;font-weight:700;color:var(--text)">In Scope — No Testing Required</span>
+        <span class="count-pill" id="nt-count">0</span>
+        <span style="font-size:11px;color:var(--text-muted);margin-left:4px">Applications tagged <code>In_Scope_But_No_Testing</code></span>
+      </div>
+      <div class="table-card">
+        <div style="overflow-x:auto">
+        <table class="data-table" style="table-layout:fixed;min-width:550px">
+          <colgroup>
+            <col style="width:80px">
+            <col>
+            <col style="width:120px">
+            <col style="width:160px">
+            <col style="width:160px">
+          </colgroup>
+          <thead>
+            <tr>
+              <th style="text-align:left">ID</th>
+              <th style="text-align:left">Title</th>
+              <th style="text-align:left">State</th>
+              <th style="text-align:left">Iteration</th>
+              <th style="text-align:left">Assigned To</th>
+            </tr>
+          </thead>
+          <tbody id="nt-tbody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /dashboard -->
 </main>
 
@@ -483,7 +554,7 @@
 // ═══════════════════════════════════════════════════════════
 const LS_KEY = 'ado-pbi-dash-v1';
 let cfg = { org:'', project:'', pat:'', refresh:120 };
-let MODEL = { pbis:[], tasks:[], bugs:[] };
+let MODEL = { pbis:[], tasks:[], bugs:[], outOfScope:[] };
 let RAW = [];
 let _timer = null;
 let _charts = {};
@@ -627,7 +698,7 @@ async function wiqlIds() {
          'Product Backlog Item','User Story','Feature','Requirement',
          'Task','Bug','Issue','Impediment'
        )
-       AND [System.State] NOT IN ('Removed','Deleted')
+       AND [System.State] NOT IN ('Deleted')
        ORDER BY [System.ChangedDate] DESC`
     })
   });
@@ -663,7 +734,8 @@ async function batchFetch(ids) {
 //  MODEL
 // ═══════════════════════════════════════════════════════════
 function buildModel() {
-  MODEL.pbis  = RAW.filter(i => PBI_TYPES.has(i.fields?.['System.WorkItemType']));
+  MODEL.pbis       = RAW.filter(i => PBI_TYPES.has(i.fields?.['System.WorkItemType']) && (i.fields?.['System.State']||'').toLowerCase() !== 'removed');
+  MODEL.outOfScope = RAW.filter(i => PBI_TYPES.has(i.fields?.['System.WorkItemType']) && (i.fields?.['System.State']||'').toLowerCase() === 'removed');
   MODEL.tasks = RAW.filter(i => TASK_TYPES.has(i.fields?.['System.WorkItemType']));
   MODEL.bugs  = RAW.filter(i => BUG_TYPES.has(i.fields?.['System.WorkItemType']));
 
@@ -749,6 +821,8 @@ function renderDashboard() {
   renderDefects();
   renderLeadTime();
   renderCharts();
+  renderOutOfScope();
+  renderNoTesting();
 }
 
 // ── KPI Cards ──
@@ -766,15 +840,17 @@ function renderKPIs() {
     return s.startsWith('1')||s.startsWith('2');
   }).length;
   const notStarted = MODEL.pbis.filter(p=>!isActive(p)&&!isDone(p)).length;
+  const outOfScope  = MODEL.outOfScope.length;
 
   document.getElementById('kpi-grid').innerHTML = [
-    { label:'Total Applications',       val:total,    sub:`${inProg} in progress, ${done} completed`,          accent:'var(--text-muted)' },
-    { label:'Applications In Progress', val:inProg,   sub:`${notStarted} not started, ${total} total`,         accent:'var(--blue-light)' },
-    { label:'Applications Completed',   val:done,     sub:`${pct}% of all applications done`,                  accent:'var(--green-light)' },
-    { label:'Tasks Completed',          val:tDone,    sub:`of ${tTotal} tasks across all applications`,        accent:'var(--purple-light)' },
-    { label:'Open Defects',             val:openBugs, sub:`${MODEL.bugs.length} defects total`,                accent: openBugs>0?'var(--yellow-light)':'var(--green-light)' },
-    { label:'Critical / High',          val:critBugs, sub:'severity 1–2 defects still open',                  accent: critBugs>0?'var(--red-light)':'var(--green-light)' },
-    { label:'Overall Progress',         val:pct+'%',  sub:`${done} of ${total} applications complete`,         accent: pct>=80?'var(--green-light)':pct>=50?'var(--yellow-light)':'var(--blue-light)' },
+    { label:'Total Applications',        val:total,      sub:`${inProg} in progress, ${done} completed`,          accent:'var(--text-muted)' },
+    { label:'Applications In Progress',  val:inProg,     sub:`${notStarted} not started, ${total} total`,         accent:'var(--blue-light)' },
+    { label:'Applications Completed',    val:done,       sub:`${pct}% of all applications done`,                  accent:'var(--green-light)' },
+    { label:'Applications Out of Scope', val:outOfScope, sub:'state marked as Removed',                           accent:'var(--text-dim)' },
+    { label:'Tasks Completed',           val:tDone,      sub:`of ${tTotal} tasks across all applications`,        accent:'var(--purple-light)' },
+    { label:'Open Defects',              val:openBugs,   sub:`${MODEL.bugs.length} defects total`,                accent: openBugs>0?'var(--yellow-light)':'var(--green-light)' },
+    { label:'Critical / High',           val:critBugs,   sub:'severity 1–2 defects still open',                  accent: critBugs>0?'var(--red-light)':'var(--green-light)' },
+    { label:'Overall Progress',          val:pct+'%',    sub:`${done} of ${total} applications complete`,         accent: pct>=80?'var(--green-light)':pct>=50?'var(--yellow-light)':'var(--blue-light)' },
   ].map(c=>`
     <div class="kpi-card" style="--kpi-accent:${c.accent}">
       <div class="kpi-label">${c.label}</div>
@@ -1256,8 +1332,79 @@ function switchTab(name, btn) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+name)?.classList.add('active');
   btn?.classList.add('active');
-  if (name==='overview')  renderCharts();
-  if (name==='leadtime')  renderLeadTime();
+  if (name==='overview')   renderCharts();
+  if (name==='leadtime')   renderLeadTime();
+  if (name==='outofscope') renderOutOfScope();
+  if (name==='notesting')  renderNoTesting();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  OUT OF SCOPE
+// ═══════════════════════════════════════════════════════════
+function renderOutOfScope() {
+  const search  = (document.getElementById('oos-search')?.value||'').toLowerCase();
+  const adoBase = `https://dev.azure.com/${encodeURIComponent(cfg.org)}/${encodeURIComponent(cfg.project)}/_workitems/edit`;
+  const items   = MODEL.outOfScope.filter(p => {
+    const title = (p.fields?.['System.Title']||'').toLowerCase();
+    return !search || title.includes(search) || String(p.id).includes(search);
+  }).sort((a,b) => (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||''));
+
+  document.getElementById('oos-count').textContent = items.length;
+  const tbody = document.getElementById('oos-tbody');
+  if (!tbody) return;
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="4"><div class="empty">No out-of-scope applications found.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = items.map(p => {
+    const title = p.fields?.['System.Title'] || '(untitled)';
+    const it    = iter(p);
+    const nm    = person(p.fields?.['System.AssignedTo']);
+    return `<tr>
+      <td style="font-size:12px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${p.id}</a></td>
+      <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
+      <td style="font-size:12px;color:var(--text-muted)">${it}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${nm}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IN SCOPE NO TESTING
+// ═══════════════════════════════════════════════════════════
+function renderNoTesting() {
+  const search  = (document.getElementById('nt-search')?.value||'').toLowerCase();
+  const adoBase = `https://dev.azure.com/${encodeURIComponent(cfg.org)}/${encodeURIComponent(cfg.project)}/_workitems/edit`;
+  const items   = MODEL.pbis.filter(p => {
+    const tags = (p.fields?.['System.Tags']||'').toLowerCase();
+    if (!tags.includes('in_scope_but_no_testing')) return false;
+    const title = (p.fields?.['System.Title']||'').toLowerCase();
+    return !search || title.includes(search) || String(p.id).includes(search);
+  }).sort((a,b) => (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||''));
+
+  document.getElementById('nt-count').textContent = items.length;
+  const tbody = document.getElementById('nt-tbody');
+  if (!tbody) return;
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">No applications tagged <strong>In_Scope_But_No_Testing</strong> found.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = items.map(p => {
+    const title = p.fields?.['System.Title'] || '(untitled)';
+    const it    = iter(p);
+    const nm    = person(p.fields?.['System.AssignedTo']);
+    return `<tr>
+      <td style="font-size:12px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${p.id}</a></td>
+      <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
+      <td>${stateBadge(p.fields?.['System.State'])}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${it}</td>
+      <td style="font-size:12px;color:var(--text-muted)">${nm}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ═══════════════════════════════════════════════════════════
