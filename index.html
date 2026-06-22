@@ -492,8 +492,8 @@
         <table class="data-table" style="table-layout:fixed;min-width:500px">
           <colgroup>
             <col style="width:80px">
+            <col style="width:380px">
             <col>
-            <col style="width:310px">
           </colgroup>
           <thead>
             <tr>
@@ -1110,6 +1110,7 @@ function renderLeadTime() {
   const adoBase = `https://dev.azure.com/${encodeURIComponent(cfg.org)}/${encodeURIComponent(cfg.project)}/_workitems/edit`;
 
   const items = MODEL.pbis.filter(p => {
+    if ((p.fields?.['System.Tags']||'').toLowerCase().includes('in_scope_but_no_testing')) return false;
     const title = (p.fields?.['System.Title']||'').toLowerCase();
     if (search && !title.includes(search)) return false;
     if (fShow) return p._uatStatus === fShow;
@@ -1135,12 +1136,13 @@ function renderLeadTime() {
     return rank(b)-rank(a) || dw(b)-dw(a);
   });
 
-  const withLeadDays   = MODEL.pbis.filter(p => p._leadDays !== null);
+  const ltPbis         = MODEL.pbis.filter(p => !(p.fields?.['System.Tags']||'').toLowerCase().includes('in_scope_but_no_testing'));
+  const withLeadDays   = ltPbis.filter(p => p._leadDays !== null);
   const avgLead        = withLeadDays.length
     ? Math.round(withLeadDays.reduce((s,p)=>s+p._leadDays,0)/withLeadDays.length) : null;
-  const cntAwaiting    = MODEL.pbis.filter(p => p._uatStatus === 'awaiting-test').length;
-  const cntInProgress  = MODEL.pbis.filter(p => p._uatStatus === 'testing-in-progress').length;
-  const cntCompleted   = MODEL.pbis.filter(p => p._uatStatus === 'test-completed').length;
+  const cntAwaiting    = ltPbis.filter(p => p._uatStatus === 'awaiting-test').length;
+  const cntInProgress  = ltPbis.filter(p => p._uatStatus === 'testing-in-progress').length;
+  const cntCompleted   = ltPbis.filter(p => p._uatStatus === 'test-completed').length;
 
   const summary = document.getElementById('lt-summary');
   if (summary) {
@@ -1223,10 +1225,11 @@ function renderCharts() {
   // ── UAT pipeline stats ──
   const pipeEl = document.getElementById('overview-pipeline');
   if (pipeEl) {
-    const noTask    = MODEL.pbis.filter(p => !p._emailTask).length;
-    const emailPend = MODEL.pbis.filter(p => p._emailTask && !isDone(p._emailTask)).length;
-    const emailSent = MODEL.pbis.filter(p => p._emailSentDate !== null).length;
-    const testStart = MODEL.pbis.filter(p => p._uatStatus === 'testing-in-progress' || p._uatStatus === 'test-completed').length;
+    const uatPbis   = MODEL.pbis.filter(p => !(p.fields?.['System.Tags']||'').toLowerCase().includes('in_scope_but_no_testing'));
+    const noTask    = uatPbis.filter(p => !p._emailTask).length;
+    const emailPend = uatPbis.filter(p => p._emailTask && !isDone(p._emailTask)).length;
+    const emailSent = uatPbis.filter(p => p._emailSentDate !== null).length;
+    const testStart = uatPbis.filter(p => p._uatStatus === 'testing-in-progress' || p._uatStatus === 'test-completed').length;
     pipeEl.innerHTML = [
       { label:'No Email Task',   val: noTask,    accent:'var(--text-dim)',      sub:'email task not yet created' },
       { label:'Email Pending',   val: emailPend, accent:'var(--text-muted)',    sub:'email task not closed yet' },
