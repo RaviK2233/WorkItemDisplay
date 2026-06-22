@@ -832,10 +832,11 @@ function renderDashboard() {
 
 // ── KPI Cards ──
 function renderKPIs() {
-  const inProg   = MODEL.pbis.filter(isActive).length;
-  const done     = MODEL.pbis.filter(isDone).length;
-  const total    = MODEL.pbis.length;
-  const pct      = total ? Math.round(100*done/total) : 0;
+  const inProg        = MODEL.pbis.filter(isActive).length;
+  const done          = MODEL.pbis.filter(isDone).length;
+  const inScopeTotal  = MODEL.pbis.length;
+  const total         = inScopeTotal + MODEL.outOfScope.length;
+  const pct           = inScopeTotal ? Math.round(100*done/inScopeTotal) : 0;
   const tDone    = MODEL.tasks.filter(isDone).length;
   const tTotal   = MODEL.tasks.length;
   const openBugs = MODEL.bugs.filter(b=>!isDone(b)).length;
@@ -844,7 +845,7 @@ function renderKPIs() {
     const s = (b.fields?.['Microsoft.VSTS.Common.Severity']||'');
     return s.startsWith('1')||s.startsWith('2');
   }).length;
-  const notStarted = MODEL.pbis.filter(p=>!isActive(p)&&!isDone(p)).length;
+  const notStarted  = MODEL.pbis.filter(p=>!isActive(p)&&!isDone(p)).length;
   const outOfScope  = MODEL.outOfScope.length;
   const noTestingTag = MODEL.pbis.filter(p=>(p.fields?.['System.Tags']||'').toLowerCase().includes('in_scope_but_no_testing')).length;
   const notTested   = MODEL.pbis.filter(p=>
@@ -853,16 +854,16 @@ function renderKPIs() {
   ).length;
 
   document.getElementById('kpi-grid').innerHTML = [
-    { label:'Total Applications',             val:total,       sub:`${inProg} in progress, ${done} completed`,          accent:'var(--text-muted)' },
-    { label:'Applications In Progress',       val:inProg,      sub:`${notStarted} not started, ${total} total`,         accent:'var(--blue-light)' },
-    { label:'Applications Completed',         val:done,        sub:`${pct}% of all applications done`,                  accent:'var(--green-light)' },
-    { label:'Applications Out of Scope',      val:outOfScope,  sub:'state marked as Removed',                           accent:'var(--text-dim)' },
-    { label:'In Scope — Not Yet Tested',      val:notTested,   sub:'UAT testing not completed',                         accent: notTested>0?'var(--yellow-light)':'var(--green-light)' },
-    { label:'In Scope, No Testing Required',  val:noTestingTag,sub:'tagged In_Scope_But_No_Testing',                    accent:'var(--text-dim)' },
-    { label:'Tasks Completed',                val:tDone,       sub:`of ${tTotal} tasks across all applications`,        accent:'var(--purple-light)' },
-    { label:'Open Defects',                   val:openBugs,    sub:`${MODEL.bugs.length} defects total`,                accent: openBugs>0?'var(--yellow-light)':'var(--green-light)' },
-    { label:'Critical / High',                val:critBugs,    sub:'severity 1–2 defects still open',                  accent: critBugs>0?'var(--red-light)':'var(--green-light)' },
-    { label:'Overall Progress',               val:pct+'%',     sub:`${done} of ${total} applications complete`,         accent: pct>=80?'var(--green-light)':pct>=50?'var(--yellow-light)':'var(--blue-light)' },
+    { label:'Total Applications',             val:total,       sub:`${inScopeTotal} in scope, ${outOfScope} out of scope`,      accent:'var(--text-muted)' },
+    { label:'Applications In Progress',       val:inProg,      sub:`${notStarted} not started, ${inScopeTotal} in scope`,       accent:'var(--blue-light)' },
+    { label:'Applications Completed',         val:done,        sub:`${pct}% of all applications done`,                          accent:'var(--green-light)' },
+    { label:'Applications Out of Scope',      val:outOfScope,  sub:'state marked as Removed',                                   accent:'var(--text-dim)' },
+    { label:'In Scope — Not Yet Tested',      val:notTested,   sub:'UAT testing not completed',                                 accent: notTested>0?'var(--yellow-light)':'var(--green-light)' },
+    { label:'In Scope, No Testing Required',  val:noTestingTag,sub:'tagged In_Scope_But_No_Testing',                            accent:'var(--text-dim)' },
+    { label:'Tasks Completed',                val:tDone,       sub:`of ${tTotal} tasks across all applications`,                accent:'var(--purple-light)' },
+    { label:'Open Defects',                   val:openBugs,    sub:`${MODEL.bugs.length} defects total`,                        accent: openBugs>0?'var(--yellow-light)':'var(--green-light)' },
+    { label:'Critical / High',                val:critBugs,    sub:'severity 1–2 defects still open',                          accent: critBugs>0?'var(--red-light)':'var(--green-light)' },
+    { label:'Overall Progress',               val:pct+'%',     sub:`${done} of ${inScopeTotal} in-scope applications complete`, accent: pct>=80?'var(--green-light)':pct>=50?'var(--yellow-light)':'var(--blue-light)' },
   ].map(c=>`
     <div class="kpi-card" style="--kpi-accent:${c.accent}">
       <div class="kpi-label">${c.label}</div>
