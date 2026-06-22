@@ -493,7 +493,7 @@
           <colgroup>
             <col style="width:80px">
             <col>
-            <col style="width:260px">
+            <col style="width:310px">
           </colgroup>
           <thead>
             <tr>
@@ -1392,14 +1392,15 @@ function renderOutOfScope() {
   tbody.innerHTML = items.map(p => {
     const title  = p.fields?.['System.Title'] || '(untitled)';
     const lc     = p._lastComment;
+    const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'}) : '';
     const lcHtml = lc
-      ? `<span style="font-size:12px;color:var(--text-muted)" title="${(lc.text||'').replace(/"/g,'&quot;')}">${lc.text.length>90?lc.text.slice(0,90)+'…':lc.text}</span>`
-        + (lc.author ? `<span style="font-size:10px;color:var(--text-dim);display:block;margin-top:2px">${lc.author}</span>` : '')
-      : `<span style="color:var(--text-dim)">—</span>`;
+      ? `<div style="background:var(--surface-2);border-left:2px solid var(--border);border-radius:0 4px 4px 0;padding:7px 10px;font-size:12px;line-height:1.5;color:var(--text);word-break:break-word" title="${(lc.text||'').replace(/"/g,'&quot;')}">${lc.text.length>130?lc.text.slice(0,130)+'…':lc.text}</div>`
+        + `<div style="font-size:10px;color:var(--text-dim);margin-top:5px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">${lc.author?`<span>${lc.author}</span>`:''}${lc.author&&lc.date?'<span>·</span>':''}${lc.date?`<span>${fmtDate(lc.date)}</span>`:''}</div>`
+      : `<span style="font-size:12px;color:var(--text-dim)">No comments</span>`;
     return `<tr>
-      <td style="font-size:12px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${p.id}</a></td>
-      <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
-      <td style="vertical-align:top;white-space:normal;overflow:visible">${lcHtml}</td>
+      <td style="font-size:12px;vertical-align:top;padding-top:16px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${p.id}</a></td>
+      <td style="vertical-align:top;padding-top:13px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
+      <td style="vertical-align:top;white-space:normal;overflow:visible;max-width:310px">${lcHtml}</td>
     </tr>`;
   }).join('');
 }
