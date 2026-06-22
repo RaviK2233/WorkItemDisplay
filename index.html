@@ -1151,7 +1151,7 @@ function renderCharts() {
   if (pipeEl) {
     const noTask    = MODEL.pbis.filter(p => p._uatStatus === 'no-email').length;
     const emailPend = MODEL.pbis.filter(p => p._uatStatus === 'email-pending').length;
-    const emailSent = MODEL.pbis.filter(p => p._uatStatus === 'awaiting-test').length;
+    const emailSent = MODEL.pbis.filter(p => p._emailSentDate !== null).length;
     const testStart = MODEL.pbis.filter(p => p._uatStatus === 'testing-in-progress' || p._uatStatus === 'test-completed').length;
     pipeEl.innerHTML = [
       { label:'No Email Task',   val: noTask,    accent:'var(--text-dim)',      sub:'email task not yet created' },
