@@ -493,15 +493,13 @@
           <colgroup>
             <col style="width:80px">
             <col>
-            <col style="width:160px">
-            <col style="width:160px">
+            <col style="width:260px">
           </colgroup>
           <thead>
             <tr>
               <th style="text-align:left">ID</th>
               <th style="text-align:left">Title</th>
-              <th style="text-align:left">Iteration</th>
-              <th style="text-align:left">Assigned To</th>
+              <th style="text-align:left">Last Comment</th>
             </tr>
           </thead>
           <tbody id="oos-tbody"></tbody>
@@ -522,21 +520,17 @@
       </div>
       <div class="table-card">
         <div style="overflow-x:auto">
-        <table class="data-table" style="table-layout:fixed;min-width:550px">
+        <table class="data-table" style="table-layout:fixed;min-width:350px">
           <colgroup>
             <col style="width:80px">
             <col>
             <col style="width:120px">
-            <col style="width:160px">
-            <col style="width:160px">
           </colgroup>
           <thead>
             <tr>
               <th style="text-align:left">ID</th>
               <th style="text-align:left">Title</th>
               <th style="text-align:left">State</th>
-              <th style="text-align:left">Iteration</th>
-              <th style="text-align:left">Assigned To</th>
             </tr>
           </thead>
           <tbody id="nt-tbody"></tbody>
@@ -658,6 +652,10 @@ async function loadData() {
     document.getElementById('loading-msg').textContent = `Fetching ${ids.length} work items…`;
     RAW = await batchFetch(ids);
     buildModel();
+    if (MODEL.outOfScope.length) {
+      document.getElementById('loading-msg').textContent = `Loading comments for ${MODEL.outOfScope.length} out-of-scope item${MODEL.outOfScope.length>1?'s':''}…`;
+      await fetchOutOfScopeComments();
+    }
     renderDashboard();
 
     showScreen('dashboard');
@@ -1339,6 +1337,39 @@ function switchTab(name, btn) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  OUT OF SCOPE COMMENTS
+// ═══════════════════════════════════════════════════════════
+function stripHtml(html) {
+  return (html||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ')
+    .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+}
+
+async function fetchOutOfScopeComments() {
+  if (!MODEL.outOfScope.length) return;
+  const orgBase = `https://dev.azure.com/${encodeURIComponent(cfg.org)}`;
+  const proj    = encodeURIComponent(cfg.project);
+  await Promise.all(MODEL.outOfScope.map(async p => {
+    try {
+      const res = await fetch(
+        `${orgBase}/${proj}/_apis/wit/workItems/${p.id}/comments?$top=1&order=desc&api-version=7.1-preview.3`,
+        { headers: auth() }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const c    = data.comments?.[0];
+        p._lastComment = c
+          ? { text: stripHtml(c.text), author: c.createdBy?.displayName||'', date: c.createdDate }
+          : null;
+      } else {
+        p._lastComment = null;
+      }
+    } catch(_) {
+      p._lastComment = null;
+    }
+  }));
+}
+
+// ═══════════════════════════════════════════════════════════
 //  OUT OF SCOPE
 // ═══════════════════════════════════════════════════════════
 function renderOutOfScope() {
@@ -1354,19 +1385,21 @@ function renderOutOfScope() {
   if (!tbody) return;
 
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="4"><div class="empty">No out-of-scope applications found.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3"><div class="empty">No out-of-scope applications found.</div></td></tr>`;
     return;
   }
 
   tbody.innerHTML = items.map(p => {
-    const title = p.fields?.['System.Title'] || '(untitled)';
-    const it    = iter(p);
-    const nm    = person(p.fields?.['System.AssignedTo']);
+    const title  = p.fields?.['System.Title'] || '(untitled)';
+    const lc     = p._lastComment;
+    const lcHtml = lc
+      ? `<span style="font-size:12px;color:var(--text-muted)" title="${(lc.text||'').replace(/"/g,'&quot;')}">${lc.text.length>90?lc.text.slice(0,90)+'…':lc.text}</span>`
+        + (lc.author ? `<span style="font-size:10px;color:var(--text-dim);display:block;margin-top:2px">${lc.author}</span>` : '')
+      : `<span style="color:var(--text-dim)">—</span>`;
     return `<tr>
       <td style="font-size:12px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${p.id}</a></td>
       <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
-      <td style="font-size:12px;color:var(--text-muted)">${it}</td>
-      <td style="font-size:12px;color:var(--text-muted)">${nm}</td>
+      <td style="vertical-align:top;white-space:normal;overflow:visible">${lcHtml}</td>
     </tr>`;
   }).join('');
 }
@@ -1389,20 +1422,16 @@ function renderNoTesting() {
   if (!tbody) return;
 
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">No applications tagged <strong>In_Scope_But_No_Testing</strong> found.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3"><div class="empty">No applications tagged <strong>In_Scope_But_No_Testing</strong> found.</div></td></tr>`;
     return;
   }
 
   tbody.innerHTML = items.map(p => {
     const title = p.fields?.['System.Title'] || '(untitled)';
-    const it    = iter(p);
-    const nm    = person(p.fields?.['System.AssignedTo']);
     return `<tr>
       <td style="font-size:12px"><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${p.id}</a></td>
       <td><a href="${adoBase}/${p.id}" onclick="wiOpen(this.href);return false;">${title}</a></td>
       <td>${stateBadge(p.fields?.['System.State'])}</td>
-      <td style="font-size:12px;color:var(--text-muted)">${it}</td>
-      <td style="font-size:12px;color:var(--text-muted)">${nm}</td>
     </tr>`;
   }).join('');
 }
