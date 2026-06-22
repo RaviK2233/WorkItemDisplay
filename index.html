@@ -745,9 +745,16 @@ function buildModel() {
     if (pid && pbiById[pid]) pbiById[pid]._tasks.push(t);
   });
 
+  MODEL.bugs.forEach(b => { b._linkedPbis = []; });
   MODEL.bugs.forEach(b => {
     const pid = b.fields?.['System.Parent'];
     if (pid && pbiById[pid]) { pbiById[pid]._bugs.push(b); b._parentPbi = pbiById[pid]; }
+  });
+  // Build reverse lookup: bug → all PBIs it appears under
+  MODEL.pbis.forEach(p => {
+    (p._bugs||[]).forEach(b => {
+      if (!b._linkedPbis.find(x => x.id === p.id)) b._linkedPbis.push(p);
+    });
   });
 
   MODEL.pbis.forEach(p => {
@@ -1057,7 +1064,7 @@ function renderDefects() {
     const col = _defSort.col;
     if (col==='id')       return dir * (a.id - b.id);
     if (col==='title')    return dir * (a.fields?.['System.Title']||'').localeCompare(b.fields?.['System.Title']||'');
-    if (col==='app')      return dir * (a._parentPbi?.fields?.['System.Title']||'').localeCompare(b._parentPbi?.fields?.['System.Title']||'');
+    if (col==='app')      return dir * ((a._linkedPbis?.[0]?.fields?.['System.Title']||'').localeCompare(b._linkedPbis?.[0]?.fields?.['System.Title']||''));
     if (col==='state')    return dir * (a.fields?.['System.State']||'').localeCompare(b.fields?.['System.State']||'');
     if (col==='pri')      return dir * (parseInt(a.fields?.['Microsoft.VSTS.Common.Priority']||9) - parseInt(b.fields?.['Microsoft.VSTS.Common.Priority']||9));
     if (col==='assignee') return dir * person(a.fields?.['System.AssignedTo']).localeCompare(person(b.fields?.['System.AssignedTo']));
@@ -1080,12 +1087,18 @@ function renderDefects() {
     const ageStr  = age!==null ? age+'d' : '—';
     const ageCss  = age>30?'color:var(--red-light)':age>14?'color:var(--yellow-light)':'';
     const pri     = b.fields?.['Microsoft.VSTS.Common.Priority'];
-    const appName = b._parentPbi ? (b._parentPbi.fields?.['System.Title'] || '—') : '—';
+    const linkedPbis   = (b._linkedPbis||[]);
+    const appTitle     = linkedPbis.length
+      ? linkedPbis.map(p => p.fields?.['System.Title']||'—').join(', ')
+      : '—';
+    const appCellHtml  = linkedPbis.length > 1
+      ? linkedPbis.map(p => `<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.fields?.['System.Title']||'—'}</div>`).join('')
+      : `<span>${appTitle}</span>`;
 
     return `<tr>
       <td style="font-size:12px"><a href="${adoBase}/${b.id}" onclick="wiOpen(this.href);return false;" style="color:var(--text-dim)">#${b.id}</a></td>
       <td><a href="${adoBase}/${b.id}" onclick="wiOpen(this.href);return false;">${b.fields?.['System.Title']||''}</a></td>
-      <td style="font-size:12px;color:var(--text-muted)" title="${appName}">${appName}</td>
+      <td style="font-size:12px;color:var(--text-muted);white-space:normal" title="${appTitle}">${appCellHtml}</td>
       <td>${stateBadge(b.fields?.['System.State'])}</td>
       <td>${sevBadge(b.fields?.['Microsoft.VSTS.Common.Severity'])}</td>
       <td style="text-align:center">${pri?`<span class="badge bg-gray">P${pri}</span>`:'—'}</td>
