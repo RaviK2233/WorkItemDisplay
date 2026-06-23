@@ -651,6 +651,12 @@ async function loadData() {
 
     document.getElementById('loading-msg').textContent = `Fetching ${ids.length} work items…`;
     RAW = await batchFetch(ids);
+    // Second pass: fetch relations for bugs only (expand conflicts with fields in batch API)
+    const bugIds = RAW.filter(i => BUG_TYPES.has(i.fields?.['System.WorkItemType'])).map(i => i.id);
+    if (bugIds.length) {
+      document.getElementById('loading-msg').textContent = `Loading bug relations…`;
+      await fetchRelations(bugIds, RAW);
+    }
     buildModel();
     if (MODEL.outOfScope.length) {
       document.getElementById('loading-msg').textContent = `Loading comments for ${MODEL.outOfScope.length} out-of-scope item${MODEL.outOfScope.length>1?'s':''}…`;
@@ -720,12 +726,32 @@ async function batchFetch(ids) {
     const res = await fetch(`${orgBase}/_apis/wit/workitemsbatch?api-version=7.1`, {
       method:'POST',
       headers:{ ...auth(), 'Content-Type':'application/json' },
-      body: JSON.stringify({ ids: chunk, fields: FIELDS, '$expand': 'relations' })
+      body: JSON.stringify({ ids: chunk, fields: FIELDS })
     });
     if (!res.ok) { const t=await res.text(); throw new Error(`Batch fetch failed: ${t.slice(0,200)}`); }
     results.push(...((await res.json()).value||[]));
   }
   return results;
+}
+
+async function fetchRelations(bugIds, raw) {
+  const byId = Object.fromEntries(raw.map(i => [i.id, i]));
+  const orgBase = `https://dev.azure.com/${encodeURIComponent(cfg.org)}`;
+  for (let i = 0; i < bugIds.length; i += 200) {
+    const chunk = bugIds.slice(i, i + 200);
+    try {
+      const res = await fetch(`${orgBase}/_apis/wit/workitemsbatch?api-version=7.1`, {
+        method: 'POST',
+        headers: { ...auth(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: chunk, '$expand': 'relations' })
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      (data.value || []).forEach(wi => {
+        if (byId[wi.id]) byId[wi.id].relations = wi.relations || [];
+      });
+    } catch(_) {}
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
