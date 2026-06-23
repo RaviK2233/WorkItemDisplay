@@ -720,7 +720,7 @@ async function batchFetch(ids) {
     const res = await fetch(`${orgBase}/_apis/wit/workitemsbatch?api-version=7.1`, {
       method:'POST',
       headers:{ ...auth(), 'Content-Type':'application/json' },
-      body: JSON.stringify({ ids: chunk, fields: FIELDS })
+      body: JSON.stringify({ ids: chunk, fields: FIELDS, '$expand': 'relations' })
     });
     if (!res.ok) { const t=await res.text(); throw new Error(`Batch fetch failed: ${t.slice(0,200)}`); }
     results.push(...((await res.json()).value||[]));
@@ -750,10 +750,22 @@ function buildModel() {
     const pid = b.fields?.['System.Parent'];
     if (pid && pbiById[pid]) { pbiById[pid]._bugs.push(b); b._parentPbi = pbiById[pid]; }
   });
-  // Build reverse lookup: bug → all PBIs it appears under
+  // Build reverse lookup: bug → all PBIs it appears under (via parent field)
   MODEL.pbis.forEach(p => {
     (p._bugs||[]).forEach(b => {
       if (!b._linkedPbis.find(x => x.id === p.id)) b._linkedPbis.push(p);
+    });
+  });
+  // Also link bugs to PBIs via any relation type (Related, Affects, etc.)
+  MODEL.bugs.forEach(b => {
+    (b.relations || []).forEach(rel => {
+      const m = (rel.url || '').match(/workItems\/([0-9]+)$/i);
+      if (!m) return;
+      const rid = parseInt(m[1]);
+      const linkedPbi = pbiById[rid];
+      if (!linkedPbi) return;
+      if (!b._linkedPbis.find(x => x.id === rid)) b._linkedPbis.push(linkedPbi);
+      if (!linkedPbi._bugs.find(x => x.id === b.id)) linkedPbi._bugs.push(b);
     });
   });
 
